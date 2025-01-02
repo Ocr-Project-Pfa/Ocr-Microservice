@@ -1,13 +1,7 @@
 package isme.pfaextract.Models;
 
 import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Data;
-import lombok.NoArgsConstructor;
 
-
-@AllArgsConstructor
-@NoArgsConstructor
 @Entity
 public class Document {
 
@@ -20,9 +14,15 @@ public class Document {
     @Lob
     private String extractedData;
 
-    private String uploadDate;
+    private String lastname;
+    private String firstname;
+    private String dateOfBirth;
+    private String bornIn;
+    private String idCardNumber;
 
+    private String uploadDate;
     private String processedDate;
+
     // Getters and Setters
     public Long getId() {
         return id;
@@ -48,6 +48,46 @@ public class Document {
         this.extractedData = extractedData;
     }
 
+    public String getLastname() {
+        return lastname;
+    }
+
+    public void setLastname(String lastname) {
+        this.lastname = lastname;
+    }
+
+    public String getFirstname() {
+        return firstname;
+    }
+
+    public void setFirstname(String firstname) {
+        this.firstname = firstname;
+    }
+
+    public String getDateOfBirth() {
+        return dateOfBirth;
+    }
+
+    public void setDateOfBirth(String dateOfBirth) {
+        this.dateOfBirth = dateOfBirth;
+    }
+
+    public String getBornIn() {
+        return bornIn;
+    }
+
+    public void setBornIn(String bornIn) {
+        this.bornIn = bornIn;
+    }
+
+    public String getIdCardNumber() {
+        return idCardNumber;
+    }
+
+    public void setIdCardNumber(String idCardNumber) {
+        this.idCardNumber = idCardNumber;
+    }
+
     public String getUploadDate() {
         return uploadDate;
     }
@@ -64,3 +104,4 @@ public class Document {
         this.processedDate = processedDate;
     }
 }
+
