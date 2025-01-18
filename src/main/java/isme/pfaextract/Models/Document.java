@@ -1,107 +1,53 @@
 package isme.pfaextract.Models;
 
 import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
+import java.time.LocalDateTime;
+
+@Data
+@AllArgsConstructor
+@NoArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 @Entity
+@Table(name = "documents")
 public class Document {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @Column(nullable = false)
     private String fileName;
 
     @Lob
+    @Column(columnDefinition = "TEXT")
     private String extractedData;
 
-    private String lastname;
-    private String firstname;
-    private String dateOfBirth;
-    private String bornIn;
-    private String idCardNumber;
+    @CreationTimestamp
+    @Column(name = "upload_date", nullable = false, updatable = false)
+    private LocalDateTime uploadDate;
 
-    private String uploadDate;
-    private String processedDate;
+    @UpdateTimestamp
+    @Column(name = "processed_date")
+    private LocalDateTime processedDate;
 
-    // Getters and Setters
-    public Long getId() {
-        return id;
-    }
+    @Column(length = 50)
+    @Enumerated(EnumType.STRING)
+    private ProcessingStatus status;
 
-    public void setId(Long id) {
-        this.id = id;
-    }
+    @Column(length = 255)
+    private String errorMessage;
 
-    public String getFileName() {
-        return fileName;
-    }
-
-    public void setFileName(String fileName) {
-        this.fileName = fileName;
-    }
-
-    public String getExtractedData() {
-        return extractedData;
-    }
-
-    public void setExtractedData(String extractedData) {
-        this.extractedData = extractedData;
-    }
-
-    public String getLastname() {
-        return lastname;
-    }
-
-    public void setLastname(String lastname) {
-        this.lastname = lastname;
-    }
-
-    public String getFirstname() {
-        return firstname;
-    }
-
-    public void setFirstname(String firstname) {
-        this.firstname = firstname;
-    }
-
-    public String getDateOfBirth() {
-        return dateOfBirth;
-    }
-
-    public void setDateOfBirth(String dateOfBirth) {
-        this.dateOfBirth = dateOfBirth;
-    }
-
-    public String getBornIn() {
-        return bornIn;
-    }
-
-    public void setBornIn(String bornIn) {
-        this.bornIn = bornIn;
-    }
-
-    public String getIdCardNumber() {
-        return idCardNumber;
-    }
-
-    public void setIdCardNumber(String idCardNumber) {
-        this.idCardNumber = idCardNumber;
-    }
-
-    public String getUploadDate() {
-        return uploadDate;
-    }
-
-    public void setUploadDate(String uploadDate) {
-        this.uploadDate = uploadDate;
-    }
-
-    public String getProcessedDate() {
-        return processedDate;
-    }
-
-    public void setProcessedDate(String processedDate) {
-        this.processedDate = processedDate;
+    public enum ProcessingStatus {
+        PENDING,
+        PROCESSING,
+        COMPLETED,
+        FAILED
     }
 }
-
