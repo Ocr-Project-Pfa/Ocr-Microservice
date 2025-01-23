@@ -2,6 +2,12 @@ package isme.pfaextract.Services;
 
 import net.sourceforge.tess4j.Tesseract;
 import net.sourceforge.tess4j.TesseractException;
+import org.opencv.core.Mat;
+import org.opencv.core.MatOfByte;
+import org.opencv.core.Size;
+import org.opencv.imgcodecs.Imgcodecs;
+import org.opencv.imgproc.CLAHE;
+import org.opencv.imgproc.Imgproc;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -9,9 +15,12 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.awt.*;
-import java.awt.image.BufferedImage;
-import java.awt.image.RescaleOp;
+import java.awt.geom.AffineTransform;
+import java.awt.image.*;
+
 import jakarta.annotation.PostConstruct;
+
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
@@ -21,9 +30,6 @@ import javax.imageio.ImageIO;
 import java.awt.Color;
 import lombok.extern.slf4j.Slf4j;
 import java.io.PrintWriter;
-import java.awt.image.ConvolveOp;
-import java.awt.image.Kernel;
-import java.awt.image.BufferedImageOp;
 import java.util.HashMap;
 import java.util.Map;
 import isme.pfaextract.Models.IdCardField;
@@ -42,6 +48,7 @@ public class OcrService {
     private String trainingDataPath;
 
     private Tesseract tesseract;
+
 
     @PostConstruct
     public void init() {
@@ -155,59 +162,185 @@ public class OcrService {
     }
 
     private BufferedImage preprocessImage(BufferedImage image) {
-        // Convert to grayscale
-        BufferedImage grayImage = new BufferedImage(
-                image.getWidth(), image.getHeight(),
-                BufferedImage.TYPE_BYTE_GRAY);
-        Graphics2D g = grayImage.createGraphics();
-        g.drawImage(image, 0, 0, null);
-        g.dispose();
+        try {
+            // Convert BufferedImage to Mat
+            Mat matImage = bufferedImageToMat(image);
 
-        // Increase contrast and brightness
-        RescaleOp rescaleOp = new RescaleOp(1.2f, 15.0f, null);
-        grayImage = rescaleOp.filter(grayImage, null);
+            // Convert to grayscale
+            Mat grayImage = new Mat();
+            Imgproc.cvtColor(matImage, grayImage, Imgproc.COLOR_BGR2GRAY);
 
-        // Scale image to optimal size if needed
-        if (image.getWidth() < 1500) {
-            double scale = 1500.0 / image.getWidth();
-            int newWidth = (int) (image.getWidth() * scale);
-            int newHeight = (int) (image.getHeight() * scale);
-            BufferedImage scaledImage = new BufferedImage(newWidth, newHeight, BufferedImage.TYPE_BYTE_GRAY);
-            Graphics2D g2 = scaledImage.createGraphics();
-            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
-            g2.drawImage(grayImage, 0, 0, newWidth, newHeight, null);
-            g2.dispose();
-            grayImage = scaledImage;
+            // Apply Gaussian blur
+            Imgproc.GaussianBlur(grayImage, grayImage, new Size(5, 5), 0);
+
+            // Adaptive histogram equalization
+            Mat equalizedImage = new Mat();
+            CLAHE clahe = Imgproc.createCLAHE(2.0, new Size(8, 8));
+            clahe.apply(grayImage, equalizedImage);
+
+            // Adaptive thresholding
+            Mat thresholdedImage = new Mat();
+            Imgproc.adaptiveThreshold(
+                    equalizedImage, thresholdedImage, 255,
+                    Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
+                    Imgproc.THRESH_BINARY, 11, 2);
+
+            // Morphological operations to remove noise
+            Mat kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, new Size(3, 3));
+            Imgproc.morphologyEx(thresholdedImage, thresholdedImage, Imgproc.MORPH_CLOSE, kernel);
+
+            // Convert Mat back to BufferedImage
+            return matToBufferedImage(thresholdedImage);
+        } catch (Exception e) {
+            log.error("Image preprocessing failed: {}", e.getMessage());
+            throw new RuntimeException("Failed to preprocess image", e);
         }
+    }
+    private BufferedImage matToBufferedImage(Mat mat) {
+        int type = mat.channels() > 1 ? BufferedImage.TYPE_3BYTE_BGR : BufferedImage.TYPE_BYTE_GRAY;
+        BufferedImage image = new BufferedImage(mat.cols(), mat.rows(), type);
+        byte[] data = new byte[mat.channels() * mat.cols() * mat.rows()];
+        mat.get(0, 0, data);
+        image.getRaster().setDataElements(0, 0, mat.cols(), mat.rows(), data);
+        return image;
+    }
 
-        // Apply adaptive thresholding
-        BufferedImage binarized = new BufferedImage(
-                grayImage.getWidth(), grayImage.getHeight(),
-                BufferedImage.TYPE_BYTE_BINARY);
+    private Mat bufferedImageToMat(BufferedImage image) {
+        ByteArrayInputStream inputStream = new ByteArrayInputStream(((DataBufferByte) image.getRaster().getDataBuffer()).getData());
+        return Imgcodecs.imdecode(new MatOfByte(inputStream.readAllBytes()), Imgcodecs.IMREAD_UNCHANGED);
+    }
 
-        int radius = 15;
-        int threshold = 15;
+    private BufferedImage deskewImage(BufferedImage image) {
+        // Calculate skew angle
+        double angle = detectSkewAngle(image);
 
-        for (int y = 0; y < grayImage.getHeight(); y++) {
-            for (int x = 0; x < grayImage.getWidth(); x++) {
-                int sum = 0;
-                int count = 0;
+        // Create transform
+        AffineTransform transform = AffineTransform.getRotateInstance(
+                Math.toRadians(angle),
+                image.getWidth() / 2.0,
+                image.getHeight() / 2.0);
 
-                for (int wy = Math.max(0, y - radius); wy < Math.min(grayImage.getHeight(), y + radius + 1); wy++) {
-                    for (int wx = Math.max(0, x - radius); wx < Math.min(grayImage.getWidth(), x + radius + 1); wx++) {
-                        sum += grayImage.getRGB(wx, wy) & 0xFF;
-                        count++;
-                    }
-                }
+        // Create new image
+        AffineTransformOp op = new AffineTransformOp(transform,
+                AffineTransformOp.TYPE_BILINEAR);
+        return op.filter(image, null);
+    }
+    private double detectSkewAngle(BufferedImage image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        int[][] pixels = new int[width][height];
 
-                int mean = sum / count;
-                int pixel = grayImage.getRGB(x, y) & 0xFF;
-                binarized.setRGB(x, y, (pixel < mean - threshold) ? 0xFF000000 : 0xFFFFFFFF);
+        // Convert to binary pixels
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                pixels[x][y] = (image.getRGB(x, y) & 0xFF) < 128 ? 1 : 0;
             }
         }
 
-        return binarized;
+        // Detect lines using Hough transform
+        double maxAngle = 20; // Max skew assumed
+        double accuracy = 0.1; // Angle accuracy
+        int[] histogram = new int[(int)(2 * maxAngle / accuracy)];
+
+        // Simplified Hough transform for horizontal lines
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                if (pixels[x][y] == 1) {
+                    for (double angle = -maxAngle; angle < maxAngle; angle += accuracy) {
+                        double radian = Math.toRadians(angle);
+                        double rho = x * Math.cos(radian) + y * Math.sin(radian);
+                        int histIndex = (int)((angle + maxAngle) / accuracy);
+                        histogram[histIndex]++;
+                    }
+                }
+            }
+        }
+
+        // Find peak in histogram
+        int maxIndex = 0;
+        for (int i = 1; i < histogram.length; i++) {
+            if (histogram[i] > histogram[maxIndex]) {
+                maxIndex = i;
+            }
+        }
+
+        return maxIndex * accuracy - maxAngle;
     }
+
+    private BufferedImage adaptiveHistogramEqualization(BufferedImage image) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        BufferedImage result = new BufferedImage(width, height, image.getType());
+
+        // Window size for local histogram
+        int windowSize = 32;
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                // Calculate local window boundaries
+                int startX = Math.max(0, x - windowSize/2);
+                int endX = Math.min(width, x + windowSize/2);
+                int startY = Math.max(0, y - windowSize/2);
+                int endY = Math.min(height, y + windowSize/2);
+
+                // Calculate local histogram
+                int[] histogram = new int[256];
+                for (int wy = startY; wy < endY; wy++) {
+                    for (int wx = startX; wx < endX; wx++) {
+                        int gray = image.getRGB(wx, wy) & 0xFF;
+                        histogram[gray]++;
+                    }
+                }
+
+                // Calculate cumulative histogram
+                int[] cdf = new int[256];
+                cdf[0] = histogram[0];
+                for (int i = 1; i < 256; i++) {
+                    cdf[i] = cdf[i-1] + histogram[i];
+                }
+
+                // Normalize pixel
+                int gray = image.getRGB(x, y) & 0xFF;
+                int newGray = (int)(255.0 * cdf[gray] / cdf[255]);
+                int rgb = (newGray << 16) | (newGray << 8) | newGray;
+                result.setRGB(x, y, rgb);
+            }
+        }
+
+        return result;
+    }
+    private BufferedImage applyMedianFilter(BufferedImage image, int windowSize) {
+        int width = image.getWidth();
+        int height = image.getHeight();
+        BufferedImage result = new BufferedImage(width, height, image.getType());
+
+        int[] window = new int[windowSize * windowSize];
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                // Fill window
+                int idx = 0;
+                for (int wy = -windowSize/2; wy <= windowSize/2; wy++) {
+                    for (int wx = -windowSize/2; wx <= windowSize/2; wx++) {
+                        int px = Math.min(Math.max(x + wx, 0), width - 1);
+                        int py = Math.min(Math.max(y + wy, 0), height - 1);
+                        window[idx++] = image.getRGB(px, py) & 0xFF;
+                    }
+                }
+
+                // Sort window to find median
+                Arrays.sort(window);
+                int median = window[window.length / 2];
+
+                // Set result pixel
+                int rgb = (median << 16) | (median << 8) | median;
+                result.setRGB(x, y, rgb);
+            }
+        }
+
+        return result;
+    }
+
 
     private String performOcrWithFallback(BufferedImage image) throws TesseractException {
         // Try different PSM modes
