@@ -29,6 +29,21 @@ public class Document {
     @Column(columnDefinition = "TEXT")
     private String extractedData;
 
+    @Column
+    private String firstname;
+
+    @Column
+    private String lastname;
+
+    @Column(name = "born_at")
+    private String bornAt;
+
+    @Column(name = "born_in")
+    private String bornIn;
+
+    @Column(name = "id_card_number")
+    private String idCardNumber;
+
     @CreationTimestamp
     @Column(name = "upload_date", nullable = false, updatable = false)
     private LocalDateTime uploadDate;

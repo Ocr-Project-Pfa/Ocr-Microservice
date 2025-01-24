@@ -32,6 +32,9 @@ import lombok.extern.slf4j.Slf4j;
 import java.io.PrintWriter;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
 import isme.pfaextract.Models.IdCardField;
 import isme.pfaextract.Models.MoroccanIdData;
 import isme.pfaextract.utils.MoroccanDataConstants;
@@ -41,7 +44,7 @@ import isme.pfaextract.utils.MoroccanDataConstants;
 public class OcrService {
     private static final Set<String> ALLOWED_EXTENSIONS = new HashSet<>(Arrays.asList("png", "jpg", "jpeg", "tiff", "pdf"));
 
-    @Value("${tesseract.data.path}")
+    @Value("C:\\Program Files (x86)\\Tesseract-OCR\\tessdata")
     private String tesseractDataPath;
 
     @Value("${training.data.path}")
@@ -54,7 +57,7 @@ public class OcrService {
     public void init() {
         try {
             tesseract = new Tesseract();
-            tesseract.setDatapath("C:/Program Files/Tesseract-OCR/tessdata");
+            tesseract.setDatapath("C:\\Program Files (x86)\\Tesseract-OCR\\tessdata");
 
             // Set both languages with Arabic first for better detection
             tesseract.setLanguage("ara+fra");
@@ -564,5 +567,44 @@ public class OcrService {
         if (data.getExpiryDate() == null) data.setExpiryDate("Not found");
 
         return data;
+    }
+
+    public Map<String, String> mapExtractedData(String extractedData) {
+        Map<String, String> mappedData = new HashMap<>();
+
+        try {
+            // Extract firstname: French name following "المملكة"
+            String firstnameRegex = "المملكة.*?([A-Z]+)";
+            mappedData.put("firstname", extractMatch(extractedData, firstnameRegex));
+
+            // Extract lastname: French name following the Arabic word after the firstname
+            String lastnameRegex = "[A-Z]+\\s+([A-Z]+)";
+            mappedData.put("lastname", extractMatch(extractedData, lastnameRegex));
+
+            // Extract bornAt: Date pattern following "Né" or "مزداد بتاريخ"
+            String bornAtRegex = "(?:(?:Né)|(?:مزداد بتاريخ)).*?(\\d{2}[./]\\d{2}[./]\\d{4})";
+            mappedData.put("bornAt", extractMatch(extractedData, bornAtRegex));
+
+            // Extract bornIn: Location following the date
+            String bornInRegex = "\\d{2}[./]\\d{2}[./]\\d{4}.*?([A-Z]+(?:\\s[A-Z]+)?)";
+            mappedData.put("bornIn", extractMatch(extractedData, bornInRegex));
+
+            // Extract idCardNumber: ID number following "N"
+            String idCardNumberRegex = "N\\s+([A-Z0-9]+)";
+            mappedData.put("IdCardNumber", extractMatch(extractedData, idCardNumberRegex));
+
+        } catch (Exception e) {
+            log.error("Error mapping extracted data: {}", e.getMessage());
+        }
+
+        return mappedData;
+    }
+
+    private String extractMatch(String text, String regex) {
+        Matcher matcher = Pattern.compile(regex).matcher(text);
+        if (matcher.find()) {
+            return matcher.group(1).trim();
+        }
+        return "";
     }
 }
