@@ -577,9 +577,11 @@ public class OcrService {
             String firstnameRegex = "المملكة.*?([A-Z]+)";
             mappedData.put("firstname", extractMatch(extractedData, firstnameRegex));
 
-            // Extract lastname: French name following the Arabic word after the firstname
-            String lastnameRegex = "[A-Z]+\\s+([A-Z]+)";
+            // Regex to skip the first two French uppercase strings and extract the third one
+            String lastnameRegex = "(?<=ROYAUME DU MAROC).*?([A-Z]+ [A-Z]+)";
+            // Extract the third uppercase string as the last name
             mappedData.put("lastname", extractMatch(extractedData, lastnameRegex));
+
 
             // Extract bornAt: Date pattern following "Né" or "مزداد بتاريخ"
             String bornAtRegex = "(?:(?:Né)|(?:مزداد بتاريخ)).*?(\\d{2}[./]\\d{2}[./]\\d{4})";
